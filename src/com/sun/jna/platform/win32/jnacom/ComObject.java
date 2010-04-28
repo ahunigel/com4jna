@@ -47,7 +47,7 @@ public class ComObject implements InvocationHandler {
 
     private Pointer _InterfacePtr = null;
 
-    public ComObject(Pointer interfacePointer) {
+    private ComObject(Pointer interfacePointer) {
         _InterfacePtr = interfacePointer;
     }
 
@@ -67,21 +67,28 @@ public class ComObject implements InvocationHandler {
         if (hresult.intValue() < 0)
             throw new ComException("CoCreateInstance returned 0x"+Integer.toHexString(hresult.intValue()),hresult.intValue());
         Pointer interfacePointer = punkown.getValue();
-        //Function;
-        return createProxyForNewObject(new ComObject(interfacePointer), primaryInterface);
+        return wrapNativeInterface(interfacePointer, primaryInterface);
     }
 
     public static int getLastHRESULT() {
         return lastHRESULT;
     }
 
-    private <T> T createProxy(Class<?>... interfaces) {
-        T p = (T) Proxy.newProxyInstance(ComObject.class.getClassLoader(), interfaces, this);
+    public static <T extends IUnknown> T copy(T theInterface) {
+        ComObject comObj = (ComObject) Proxy.getInvocationHandler((Proxy)theInterface);
+        theInterface.addRef();
+        T p = (T) Proxy.newProxyInstance(ComObject.class.getClassLoader(), new Class<?>[]{theInterface.getClass()}, new ComObject(comObj._InterfacePtr));
         return p;
     }
 
-    private static<T> T createProxyForNewObject(ComObject object, Class<T> interfaces) {
-        T p = (T) Proxy.newProxyInstance(ComObject.class.getClassLoader(), new Class<?>[] {interfaces}, object);
+    public static <T extends IUnknown> T wrapNativeInterface(Pointer interfacePointer, Class<T> intrface) {
+        ComObject comObject = new ComObject(interfacePointer);
+        T p = (T) Proxy.newProxyInstance(ComObject.class.getClassLoader(), new Class<?>[]{intrface}, comObject);
+        return p;
+    }
+
+    private static<T> T createProxy(ComObject object, Class<T> intrface) {
+        T p = (T) Proxy.newProxyInstance(ComObject.class.getClassLoader(), new Class<?>[] {intrface}, object);
         return p;
     }
 
@@ -284,7 +291,7 @@ public class ComObject implements InvocationHandler {
             lastHRESULT = hresult;
             if (hresult < 0)
                 throw new ComException("Invocation of \""+method.getName()+"\" failed, hresult=0x"+Integer.toHexString(hresult), hresult);
-            return createProxyForNewObject(new ComObject(p.getValue()), method.getReturnType());
+            return createProxy(new ComObject(p.getValue()), method.getReturnType());
         } else {
             boolean returnsBSTR = false;
             Object retVal = null;
@@ -364,7 +371,7 @@ public class ComObject implements InvocationHandler {
                 Class<?> c = (Class<?>) args[0];
                 if (c.isInterface()) {
                     Pointer interfacePointer = queryInterface((Class<?>)args[0]);
-                    return createProxyForNewObject(new ComObject(interfacePointer), c);
+                    return createProxy(new ComObject(interfacePointer), c);
                 } else {
                     throw new RuntimeException("Argument to queryInterface must be a Java interface class annotated with an interface ID.");
                 }
