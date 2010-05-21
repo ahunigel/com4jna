@@ -13,7 +13,7 @@ import com.sun.jna.platform.win32.Guid;
 import com.sun.jna.platform.win32.Ole32;
 import com.sun.jna.platform.win32.Ole32Util;
 import com.sun.jna.platform.win32.Oleaut32;
-import com.sun.jna.platform.win32.W32API.HRESULT;
+import com.sun.jna.platform.win32.WinNT.HRESULT;
 import com.sun.jna.ptr.PointerByReference;
 import com.sun.jna.ptr.IntByReference;
 import com.sun.jna.ptr.LongByReference;
