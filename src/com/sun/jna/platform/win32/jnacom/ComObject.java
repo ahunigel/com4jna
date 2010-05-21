@@ -10,6 +10,7 @@ import com.sun.jna.Pointer;
 import com.sun.jna.Structure;
 import com.sun.jna.WString;
 import com.sun.jna.platform.win32.Guid;
+import com.sun.jna.platform.win32.ObjBase;
 import com.sun.jna.platform.win32.Ole32;
 import com.sun.jna.platform.win32.Ole32Util;
 import com.sun.jna.platform.win32.Oleaut32;
@@ -31,15 +32,6 @@ public class ComObject implements InvocationHandler {
     static Ole32 OLE32 = Ole32.INSTANCE;
 
     static final int ptrSize = Pointer.SIZE;
-    public static final int CLSCTX_INPROC_SERVER = 0x1;
-    public static final int CLSCTX_INPROC_HANDLER = 0x2;
-    public static final int CLSCTX_LOCAL_SERVER = 0x4;
-    public static final int CLSCTX_INPROC_SERVER16 = 0x8;
-    public static final int CLSCTX_REMOTE_SERVER = 0x10;
-    public static final int CLSCTX_ALL = (CLSCTX_INPROC_SERVER
-            | CLSCTX_INPROC_HANDLER
-            | CLSCTX_LOCAL_SERVER
-            | CLSCTX_REMOTE_SERVER);
 
     // TODO: use thread local storage for this
     private static int lastHRESULT = 0;
@@ -62,7 +54,7 @@ public class ComObject implements InvocationHandler {
         }
 
         PointerByReference punkown = new PointerByReference();
-        HRESULT hresult = OLE32.CoCreateInstance(refclsid, Pointer.NULL, CLSCTX_ALL, refiid, punkown);
+        HRESULT hresult = OLE32.CoCreateInstance(refclsid, Pointer.NULL, ObjBase.CLSCTX_ALL, refiid, punkown);
         lastHRESULT = hresult.intValue();
         if (hresult.intValue() < 0)
             throw new ComException("CoCreateInstance returned 0x"+Integer.toHexString(hresult.intValue()),hresult.intValue());
