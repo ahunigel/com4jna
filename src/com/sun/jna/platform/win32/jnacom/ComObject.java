@@ -21,6 +21,12 @@ import com.sun.jna.ptr.LongByReference;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -30,6 +36,34 @@ import java.util.logging.Logger;
  */
 public class ComObject implements InvocationHandler {
     static Ole32 OLE32 = Ole32.INSTANCE;
+
+    static boolean singleThreaded = true;
+    static Thread comThread = null;
+    static final ExecutorService comExecutor = Executors.newFixedThreadPool(
+            1,
+            new ThreadFactory() {
+
+                int num;
+
+                @Override
+                public Thread newThread(final Runnable r) {
+                    comThread = new Thread(new Runnable() {
+
+                        @Override
+                        public void run() {
+                            HRESULT hresult = Ole32.INSTANCE.CoInitializeEx(Pointer.NULL, 0);
+                            r.run();
+                            if (hresult.intValue() >= 0) {
+                                Ole32.INSTANCE.CoUninitialize();
+                            }
+                        }
+                    });
+                    comThread.setName("COM-" + num++);
+                    return comThread;
+                }
+            });
+
+   
 
     static final int ptrSize = Pointer.SIZE;
 
@@ -43,7 +77,24 @@ public class ComObject implements InvocationHandler {
         _InterfacePtr = interfacePointer;
     }
 
-    public static<T extends IUnknown> T createInstance(Class<T> primaryInterface, String clsid) {
+    public static<T extends IUnknown> T createInstance(final Class<T> primaryInterface, final String clsid) {
+
+        if (singleThreaded && Thread.currentThread() != comThread) {
+            Future<T> retVal = comExecutor.submit(new Callable<T>() {
+                public T call() throws Exception {
+                    return createInstance(primaryInterface, clsid);
+                }
+            });
+            try {
+                return retVal.get();
+            } catch (InterruptedException ex) {
+                Logger.getLogger(ComObject.class.getName()).log(Level.SEVERE, null, ex);
+            } catch (ExecutionException ex) {
+                Logger.getLogger(ComObject.class.getName()).log(Level.SEVERE, null, ex);
+            }
+            return null;
+        }
+
         Guid.GUID refclsid = Ole32Util.getGUIDFromString(clsid);
         Guid.GUID refiid = IID_IUnknown;
         try {
@@ -69,14 +120,11 @@ public class ComObject implements InvocationHandler {
     public static <T extends IUnknown> T copy(T theInterface) {
         ComObject comObj = (ComObject) Proxy.getInvocationHandler((Proxy)theInterface);
         theInterface.addRef();
-        T p = (T) Proxy.newProxyInstance(ComObject.class.getClassLoader(), new Class<?>[]{theInterface.getClass()}, new ComObject(comObj._InterfacePtr));
-        return p;
+        return (T) createProxy(new ComObject(comObj._InterfacePtr), theInterface.getClass());
     }
 
     public static <T extends IUnknown> T wrapNativeInterface(Pointer interfacePointer, Class<T> intrface) {
-        ComObject comObject = new ComObject(interfacePointer);
-        T p = (T) Proxy.newProxyInstance(ComObject.class.getClassLoader(), new Class<?>[]{intrface}, comObject);
-        return p;
+        return createProxy(new ComObject(interfacePointer), intrface);
     }
 
     private static<T> T createProxy(ComObject object, Class<T> intrface) {
@@ -354,7 +402,27 @@ public class ComObject implements InvocationHandler {
         super.finalize();
     }
 
-    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+    public Object invoke(final Object proxy, final Method method, final Object[] args) throws Throwable {
+        if (singleThreaded && Thread.currentThread() != comThread) {
+            Future<Object> retVal = comExecutor.submit(new Callable<Object>() {
+                public Object call() throws Exception {
+                    try {
+                        return invoke(proxy, method, args);
+                    } catch (Throwable ex) {
+                        throw new Exception("COM invoke failed",ex);
+                    }
+                }
+            });
+            try {
+                return retVal.get();
+            } catch (InterruptedException ex) {
+                Logger.getLogger(ComObject.class.getName()).log(Level.SEVERE, null, ex);
+            } catch (ExecutionException ex) {
+                Logger.getLogger(ComObject.class.getName()).log(Level.SEVERE, null, ex);
+            }
+            return null;
+        }
+
         if (method.getName().equals("queryInterface")) {
             // if the native interface pointer is the same, return a new proxy to
             // this same ComObject that implements the interface required interface
