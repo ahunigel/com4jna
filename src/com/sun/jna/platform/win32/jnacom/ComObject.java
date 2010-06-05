@@ -35,40 +35,71 @@ import java.util.logging.Logger;
  * @author scott.palmer@digital-rapids.com
  */
 public class ComObject implements InvocationHandler {
+    static final Logger logger = Logger.getLogger(ComObject.class.getName());
     static Ole32 OLE32 = Ole32.INSTANCE;
+    static ThreadLocal<Boolean> comInitialized = new ThreadLocal<Boolean>() {
+        @Override
+        protected Boolean initialValue() {
+            return Boolean.FALSE;
+        }
+    };
 
-    static boolean singleThreaded = true;
-    static Thread comThread = null;
-    static final ExecutorService comExecutor = Executors.newFixedThreadPool(
-            1,
-            new ThreadFactory() {
+    static public boolean isComInitialized() {
+        return comInitialized.get();
+    }
+
+    static public HRESULT initializeCOM() {
+        comInitialized.set(true);
+        return Ole32.INSTANCE.CoInitializeEx(Pointer.NULL, 0);
+    }
+
+    static private int threadNum = 0;
+    static final public ThreadFactory comThreadFactory = new ThreadFactory() {
 
                 int num;
 
                 @Override
                 public Thread newThread(final Runnable r) {
-                    comThread = new Thread(new Runnable() {
-
-                        @Override
-                        public void run() {
-                            HRESULT hresult = Ole32.INSTANCE.CoInitializeEx(Pointer.NULL, 0);
-                            r.run();
-                            if (hresult.intValue() >= 0) {
-                                Ole32.INSTANCE.CoUninitialize();
-                            }
-                        }
-                    });
-                    comThread.setName("COM-" + num++);
+                    comThread = createComThread(r);
+                    return comThread;
+                }
+            };
+    static boolean singleThreaded = Boolean.getBoolean("jnacom.singleThreaded");
+    /** For single threaded mode this is the one and only COM thread */
+    static Thread comThread = null;
+    static final ExecutorService comExecutor = Executors.newFixedThreadPool(
+            1,
+            new ThreadFactory() {
+                @Override
+                public Thread newThread(final Runnable r) {
+                    comThread = createComThread(r);
                     return comThread;
                 }
             });
-
-   
+    /**
+     * Creates a thread that insures COM is initialized prior to calling the runnable.
+     * @param r
+     * @return a thread wrapping the given Runnable
+     */
+    static public Thread createComThread(final Runnable r) {
+        Thread t = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                HRESULT hresult = ComObject.initializeCOM();
+                r.run();
+                if (hresult.intValue() >= 0) {
+                    Ole32.INSTANCE.CoUninitialize();
+                }
+            }
+        });
+        t.setName("COM-" + threadNum++);
+        return t;
+    }
 
     static final int ptrSize = Pointer.SIZE;
 
     // TODO: use thread local storage for this
-    private static int lastHRESULT = 0;
+    private static ThreadLocal<Integer> lastHRESULT = new ThreadLocal<Integer>();
     public static final Guid.GUID IID_IUnknown = Ole32Util.getGUIDFromString("{00000000-0000-0000-C000-000000000046}");
 
     private Pointer _InterfacePtr = null;
@@ -88,12 +119,14 @@ public class ComObject implements InvocationHandler {
             try {
                 return retVal.get();
             } catch (InterruptedException ex) {
-                Logger.getLogger(ComObject.class.getName()).log(Level.SEVERE, null, ex);
+                logger.log(Level.SEVERE, null, ex);
             } catch (ExecutionException ex) {
-                Logger.getLogger(ComObject.class.getName()).log(Level.SEVERE, null, ex);
+                logger.log(Level.SEVERE, null, ex);
             }
             return null;
         }
+
+        assert isComInitialized() : "COM not initialized when calling createInstance on "+Thread.currentThread();
 
         Guid.GUID refclsid = Ole32Util.getGUIDFromString(clsid);
         Guid.GUID refiid = IID_IUnknown;
@@ -101,12 +134,12 @@ public class ComObject implements InvocationHandler {
             String iid = (String) primaryInterface.getAnnotation(IID.class).value();
             refiid = Ole32Util.getGUIDFromString(iid);
         } catch (Exception ex) {
-            Logger.getLogger(ComObject.class.getName()).log(Level.SEVERE, null, ex);
+            logger.log(Level.SEVERE, null, ex);
         }
 
         PointerByReference punkown = new PointerByReference();
         HRESULT hresult = OLE32.CoCreateInstance(refclsid, Pointer.NULL, ObjBase.CLSCTX_ALL, refiid, punkown);
-        lastHRESULT = hresult.intValue();
+        lastHRESULT.set(hresult.intValue());
         if (hresult.intValue() < 0)
             throw new ComException("CoCreateInstance returned 0x"+Integer.toHexString(hresult.intValue()),hresult.intValue());
         Pointer interfacePointer = punkown.getValue();
@@ -114,16 +147,18 @@ public class ComObject implements InvocationHandler {
     }
 
     public static int getLastHRESULT() {
-        return lastHRESULT;
+        return lastHRESULT.get();
     }
 
     public static <T extends IUnknown> T copy(T theInterface) {
+        assert isComInitialized() : "COM not initialized when calling ComObject.copy on "+Thread.currentThread();
         ComObject comObj = (ComObject) Proxy.getInvocationHandler((Proxy)theInterface);
         theInterface.addRef();
         return (T) createProxy(new ComObject(comObj._InterfacePtr), theInterface.getClass());
     }
 
     public static <T extends IUnknown> T wrapNativeInterface(Pointer interfacePointer, Class<T> intrface) {
+        assert isComInitialized() : "COM not initialized when calling wrapNativeInterface on "+Thread.currentThread();
         return createProxy(new ComObject(interfacePointer), intrface);
     }
 
@@ -145,13 +180,13 @@ public class ComObject implements InvocationHandler {
             PointerByReference ppvObject = new PointerByReference();
             Guid.GUID refiid = Ole32Util.getGUIDFromString(iid);
             int hresult = func.invokeInt(new Object[]{_InterfacePtr, refiid, ppvObject});
-            lastHRESULT = hresult;
+            lastHRESULT.set(hresult);
             if (hresult >= 0) {
                 return ppvObject.getValue();
             }
             throw new ComException("queryInterface failed. HRESULT = 0x"+Integer.toHexString(hresult),hresult);
         } catch (IllegalArgumentException ex) {
-            Logger.getLogger(ComObject.class.getName()).log(Level.SEVERE, null, ex);
+            logger.log(Level.SEVERE, null, ex);
             throw new RuntimeException("queryInterface failed",ex);
         }
     }
@@ -288,7 +323,7 @@ public class ComObject implements InvocationHandler {
         Function func = Function.getFunction(vptr.getPointer(offset * ptrSize));
         Object[] aarg = prepareArgs(method, args);
         int hresult = func.invokeInt(aarg);
-        lastHRESULT = hresult;
+        lastHRESULT.set(hresult);
         if (hresult < 0)
             throw new ComException("Invocation of \"" + method.getName() + "\" failed, hresult=0x" + Integer.toHexString(hresult), hresult);
     }
@@ -300,7 +335,7 @@ public class ComObject implements InvocationHandler {
         IntByReference retVal = new com.sun.jna.ptr.IntByReference();
         Object[] aarg = prepareArgs(method, args, retVal);
         int hresult = func.invokeInt(aarg);
-        lastHRESULT = hresult;
+        lastHRESULT.set(hresult);
         if (hresult < 0)
             throw new ComException("Invocation of \"" + method.getName() + "\" failed, hresult=0x" + Integer.toHexString(hresult),hresult);
         return retVal.getValue();
@@ -313,7 +348,7 @@ public class ComObject implements InvocationHandler {
         LongByReference retVal = new com.sun.jna.ptr.LongByReference();
         Object[] aarg = prepareArgs(method, args, retVal);
         int hresult = func.invokeInt(aarg);
-        lastHRESULT = hresult;
+        lastHRESULT.set(hresult);
         if (hresult < 0)
             throw new ComException("Invocation of \"" + method.getName() + "\" failed, hresult=0x" + Integer.toHexString(hresult), hresult);
         return retVal.getValue();
@@ -328,7 +363,7 @@ public class ComObject implements InvocationHandler {
             PointerByReference p = new PointerByReference();
             Object[] aarg = prepareArgs(method, args, p);
             int hresult = (Integer) func.invoke(Integer.class, aarg);
-            lastHRESULT = hresult;
+            lastHRESULT.set(hresult);
             if (hresult < 0)
                 throw new ComException("Invocation of \""+method.getName()+"\" failed, hresult=0x"+Integer.toHexString(hresult), hresult);
             return createProxy(new ComObject(p.getValue()), method.getReturnType());
@@ -350,16 +385,16 @@ public class ComObject implements InvocationHandler {
                     retVal = method.getReturnType().newInstance();
                     assert retVal instanceof Structure;
                 } catch (InstantiationException ex) {
-                    Logger.getLogger(ComObject.class.getName()).log(Level.SEVERE, null, ex);
+                    logger.log(Level.SEVERE, null, ex);
                     throw new RuntimeException("Invocation of \"" + method.getName() + "\" failed.",ex);
                 } catch (IllegalAccessException ex) {
-                    Logger.getLogger(ComObject.class.getName()).log(Level.SEVERE, null, ex);
+                    logger.log(Level.SEVERE, null, ex);
                     throw new RuntimeException("Invocation of \"" + method.getName() + "\" failed.", ex);
                 }
             }
             Object[] aarg = prepareArgsObjOut(method, args, retVal);
             int hresult = (Integer) func.invoke(Integer.class, aarg);
-            lastHRESULT = hresult;
+            lastHRESULT.set(hresult);
             if (hresult < 0)
                 throw new ComException("Invocation of \"" + method.getName() + "\" failed, hresult=0x" + Integer.toHexString(hresult), hresult);
             if (returnsBSTR) {
@@ -422,6 +457,8 @@ public class ComObject implements InvocationHandler {
             }
             return null;
         }
+
+        assert isComInitialized() : "COM not initialized when calling "+method.getName()+" on "+Thread.currentThread();
 
         if (method.getName().equals("queryInterface")) {
             // if the native interface pointer is the same, return a new proxy to
