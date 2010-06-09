@@ -98,7 +98,6 @@ public class ComObject implements InvocationHandler {
 
     static final int ptrSize = Pointer.SIZE;
 
-    // TODO: use thread local storage for this
     private static ThreadLocal<Integer> lastHRESULT = new ThreadLocal<Integer>();
     public static final Guid.GUID IID_IUnknown = Ole32Util.getGUIDFromString("{00000000-0000-0000-C000-000000000046}");
 
