@@ -153,7 +153,8 @@ public class ComObject implements InvocationHandler {
         assert isComInitialized() : "COM not initialized when calling ComObject.copy on "+Thread.currentThread();
         ComObject comObj = (ComObject) Proxy.getInvocationHandler((Proxy)theInterface);
         theInterface.addRef();
-        return (T) createProxy(new ComObject(comObj._InterfacePtr), theInterface.getClass());
+        Class [] clazz = theInterface.getClass().getInterfaces();
+        return (T) createProxy(new ComObject(comObj._InterfacePtr), clazz[0]);
     }
 
     public static <T extends IUnknown> T wrapNativeInterface(Pointer interfacePointer, Class<T> intrface) {
