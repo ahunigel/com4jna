@@ -101,6 +101,9 @@ public class ComObject implements InvocationHandler {
     private static ThreadLocal<Integer> lastHRESULT = new ThreadLocal<Integer>();
     public static final Guid.GUID IID_IUnknown = Ole32Util.getGUIDFromString("{00000000-0000-0000-C000-000000000046}");
 
+    /*
+     * The only real data that this object holds... the interface pointer
+     */
     private Pointer _InterfacePtr = null;
 
     private ComObject(Pointer interfacePointer) {
@@ -328,6 +331,14 @@ public class ComObject implements InvocationHandler {
             throw new ComException("Invocation of \"" + method.getName() + "\" failed, hresult=0x" + Integer.toHexString(hresult), hresult);
     }
 
+    /** Invokes a standard COM method that returns an integer
+     * The actual COM method is assumed to always return an HRESULT. The "real"
+     * return value is added to the end of the parameters list via pass by
+     * reference so it can be filled in.
+     * @param method
+     * @param args
+     * @return The integer return value (NOT the HRESULT)
+     */
     int invokeIntCom(Method method, Object... args){
         int offset = method.getAnnotation(VTID.class).value();
         Pointer vptr = _InterfacePtr.getPointer(0);
@@ -406,16 +417,16 @@ public class ComObject implements InvocationHandler {
         }
     }
 
-    void addRef() {
+    int addRef() {
         Pointer vptr = _InterfacePtr.getPointer(0);
-        Function func = Function.getFunction(vptr.getPointer(ptrSize));
-        func.invoke(new Object[] {_InterfacePtr});
+        Function func = Function.getFunction(vptr.getPointer(1 * ptrSize));
+        return func.invokeInt(new Object[] {_InterfacePtr});
     }
     
-    void release() {
+    int release() {
         Pointer vptr = _InterfacePtr.getPointer(0);
         Function func = Function.getFunction(vptr.getPointer(2 * ptrSize));
-        func.invoke(new Object[]{_InterfacePtr});
+        return func.invokeInt(new Object[]{_InterfacePtr});
     }
 
     /**
@@ -427,6 +438,8 @@ public class ComObject implements InvocationHandler {
     public void dispose() {
         if (_InterfacePtr != null) {
             release();
+            // because we share the native pointer amoung interface copies
+            // we can't assume that the reference count should be zero here
             _InterfacePtr = null;
         }
     }
@@ -460,7 +473,8 @@ public class ComObject implements InvocationHandler {
 
         assert isComInitialized() : "COM not initialized when calling "+method.getName()+" on "+Thread.currentThread();
 
-        if (method.getName().equals("queryInterface")) {
+        String mname = method.getName();
+        if (mname.equals("queryInterface")) {
             // if the native interface pointer is the same, return a new proxy to
             // this same ComObject that implements the interface required interface
             // otherwise make a new ComObject to wrap the returned interface pointer
@@ -473,11 +487,11 @@ public class ComObject implements InvocationHandler {
                     throw new RuntimeException("Argument to queryInterface must be a Java interface class annotated with an interface ID.");
                 }
             }
-        } else if (method.getName().equals("dispose")) {
+        } else if (mname.equals("dispose")) {
             //System.out.println("dispose() ->"+proxy);
             dispose();
             return null;
-        } else if (method.getName().equals("toString")) {
+        } else if (mname.equals("toString")) {
             StringBuilder sb = new StringBuilder();
             sb.append(_InterfacePtr);
             sb.append("):");
@@ -492,6 +506,10 @@ public class ComObject implements InvocationHandler {
             }
 
             return sb.toString();
+        } else if (mname.equals("addRef")) {
+            return addRef();
+        } else if (mname.equals("release")) {
+            return release();
         }
        
         //Examine the args and wrap String objects as WString
