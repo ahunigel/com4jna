@@ -446,6 +446,7 @@ public class ComObject implements InvocationHandler {
 
     @Override
     protected void finalize() throws Throwable {
+        logger.log(Level.FINEST, "Finalizing: {0}", getClass().getName());
         dispose();
         super.finalize();
     }
