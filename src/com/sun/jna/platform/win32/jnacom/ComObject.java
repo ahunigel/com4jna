@@ -435,7 +435,7 @@ public class ComObject implements InvocationHandler {
      * references by value, the need for explicite addRef and release calls
      * is rare.
      */
-    public void dispose() {
+    public synchronized void dispose() {
         if (_InterfacePtr != null) {
             release();
             // because we share the native pointer amoung interface copies
