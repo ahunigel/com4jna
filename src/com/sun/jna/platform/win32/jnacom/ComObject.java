@@ -14,6 +14,8 @@ import com.sun.jna.platform.win32.ObjBase;
 import com.sun.jna.platform.win32.Ole32;
 import com.sun.jna.platform.win32.Ole32Util;
 import com.sun.jna.platform.win32.Oleaut32;
+import com.sun.jna.platform.win32.WinNT.HANDLE;
+import com.sun.jna.platform.win32.WinNT.HANDLEByReference;
 import com.sun.jna.platform.win32.WinNT.HRESULT;
 import com.sun.jna.ptr.ByteByReference;
 import com.sun.jna.ptr.DoubleByReference;
@@ -322,6 +324,22 @@ public class ComObject implements InvocationHandler {
         return aarg;
     }
 
+    Object[] prepareArgs(Method method, Object[] args, HANDLEByReference retVal) {
+        Object[] aarg;
+        ReturnValue rv = method.getAnnotation(ReturnValue.class);
+        if (rv != null && rv.inout()) {
+            aarg = prepareArgs(method, args);
+            // replace the return value (in/out) reference
+            retVal.setValue(((HANDLE) args[rv.index()]));
+            aarg[rv.index()] = retVal;
+        } else {
+            aarg = prepareArgsPlusRetVal(method, args);
+            aarg[aarg.length-1] = retVal;
+        }
+        aarg[0] = _InterfacePtr;
+        return aarg;
+    }
+
     Object[] prepareArgs(Method method, Object[] args, PointerByReference retVal) {
         Object[] aarg;
         ReturnValue rv = method.getAnnotation(ReturnValue.class);
@@ -435,6 +453,19 @@ public class ComObject implements InvocationHandler {
         Pointer vptr = _InterfacePtr.getPointer(0);
         Function func = Function.getFunction(vptr.getPointer(offset * ptrSize));
         ByteByReference retVal = new com.sun.jna.ptr.ByteByReference();
+        Object[] aarg = prepareArgs(method, args, retVal);
+        int hresult = func.invokeInt(aarg);
+        lastHRESULT.set(hresult);
+        if (hresult < 0)
+            throw new ComException("Invocation of \"" + method.getName() + "\" failed, hresult=0x" + Integer.toHexString(hresult), hresult);
+        return retVal.getValue();
+    }
+
+    HANDLE invokeHandleCom(Method method, Object... args){
+        int offset = method.getAnnotation(VTID.class).value();
+        Pointer vptr = _InterfacePtr.getPointer(0);
+        Function func = Function.getFunction(vptr.getPointer(offset * ptrSize));
+        HANDLEByReference retVal = new HANDLEByReference();
         Object[] aarg = prepareArgs(method, args, retVal);
         int hresult = func.invokeInt(aarg);
         lastHRESULT.set(hresult);
@@ -615,6 +646,8 @@ public class ComObject implements InvocationHandler {
             return invokeByteCom(method, args);
         } else if (method.getReturnType() == Boolean.TYPE) {
             return invokeByteCom(method, args) != 0;
+        } else if (method.getReturnType() == HANDLE.class) {
+            return invokeHandleCom(method, args);
         } else {
             return invokeObjectCom(method, args);
         }
