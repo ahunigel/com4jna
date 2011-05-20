@@ -1,10 +1,1 @@
-build
-dist
-.hgignore
-.+\.vcproj\..+\.user$
-.*\.ncb
-.*\.suo
-.*/bin/.*
-.*/obj/.*
-^nbproject/private
-
+target 
