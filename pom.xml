@@ -10,7 +10,7 @@
     <groupId>ca.digitalrapids</groupId>
     <artifactId>com4jna</artifactId>
     <packaging>jar</packaging>
-	<version>1.0.0</version>
+	<version>1.0.1-SNAPSHOT</version>
     <name>Com4JNA</name>
     <description>Com4JNA Call COM via JNA</description>
     <repositories>
