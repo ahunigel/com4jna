@@ -1,6 +1,5 @@
 /*
- * Copyright 2010 Digital Rapids Corporation.
- * All rights reserved.
+ * Copyright 2010-2011 Digital Rapids Corporation.
  */
 
 package com.sun.jna.platform.win32.jnacom;

@@ -1,3 +1,7 @@
+/*
+ * Copyright 2011 Digital Rapids Corporation.
+ */
+
 package com.sun.jna.platform.win32.jnacom;
 
 import com.sun.jna.platform.win32.jnacom.IUnknown;
