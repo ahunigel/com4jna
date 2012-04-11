@@ -1,11 +1,5 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
 
-    <parent>
-        <groupId>ca.digitalrapids</groupId>
-        <artifactId>drc-parent</artifactId>
-        <version>1.1</version>
-    </parent>
-
 	<modelVersion>4.0.0</modelVersion>
     <groupId>ca.digitalrapids</groupId>
     <artifactId>com4jna</artifactId>
@@ -20,17 +14,6 @@
             <url>file://\\\\FileServer\\R&amp;D\\MavenRepository</url>
         </repository>
     </repositories>
-
-    <scm>
-        <connection>scm:hg:http://mercurial/hg/Com4JNA</connection>
-        <developerConnection>scm:hg:http://mercurial/hg/Com4JNA</developerConnection>
-        <url>http://mercurial/hg/Com4JNA</url>
-    </scm>
-
-    <ciManagement>
-        <system>Hudson</system>
-        <url>http://dcm-integration:8080/job/Com4JNA/</url>
-    </ciManagement>
 
     <build>
         <plugins>
@@ -73,12 +56,13 @@
         <dependency>
             <groupId>net.java.dev.jna</groupId>
             <artifactId>jna</artifactId>
-            <version>3.2.5</version>
+            <version>3.3.0</version>
         </dependency>
         <dependency>
-            <groupId>ca.digitalrapids.thirdparty.jna</groupId>
-            <artifactId>platform</artifactId>
-            <version>1.0.1</version>
+            <groupId>net.java.dev.jna</groupId>
+            <artifactId>jna</artifactId>
+			<classifier>platform</classifier>
+            <version>3.3.0</version>
         </dependency>
         <dependency>
             <groupId>junit</groupId>
